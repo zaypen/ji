@@ -36,3 +36,6 @@ targets = ["aarch64-apple-darwin"]
 # no runtime library to ask for.
 [dist.dependencies.homebrew]
 opus = { stage = ["build"] }
+# ji-dictate records with this, and without it the toggle script starts, sits, and tells you
+# nothing was recognised. Better to say "install ffmpeg" than to be right about the log.
+ffmpeg = { stage = ["run"] }

@@ -106,9 +106,16 @@ fi
 
 mkdir -p "$(dirname "$log")"
 
-if [ -f "$state" ] && kill -0 "$(cut -d' ' -f1 < "$state")" 2>/dev/null; then
+# Either half being alive counts as running. If the recorder died on its own - no ffmpeg, a
+# device that is already busy, permissions not granted yet - the reader is still sitting on
+# the fifo waiting for bytes that will never come, and looking only for the recorder would
+# start a second session on top of it. This was a leak, not a typo.
+if [ -f "$state" ] && { kill -0 "$(cut -d' ' -f1 < "$state")" 2>/dev/null || kill -0 "$(cut -d' ' -f2 < "$state")" 2>/dev/null; }; then
   read -r recorder reader < "$state"
   kill -TERM "$recorder" 2>/dev/null || :
+  # Nothing was ever recorded, so nothing has to finish. This is the branch where the
+  # recorder is gone and the reader is the only thing left to clean up.
+  kill -0 "$recorder" 2>/dev/null || kill -TERM -- -"$reader" 2>/dev/null || kill -TERM "$reader" 2>/dev/null || :
   rm -f "$state"
   sound 880 660
 
