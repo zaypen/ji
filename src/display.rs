@@ -1,30 +1,54 @@
 use std::io::{IsTerminal, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static TTY: AtomicBool = AtomicBool::new(false);
 
-const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+/// The live line is owned by the process, so it says when it stops being redrawn.
+static RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// The last few levels, oldest first. A strip rather than one block, because one block that
-/// comes and goes says nothing about whether audio is arriving: silence and a stuck recorder
-/// both look like a flat line, and so does a room where nobody has started speaking.
-static STRIP: Mutex<Vec<char>> = Mutex::new(Vec::new());
-const CELLS: usize = 12;
+/// Whether any audio has been seen. Until it has, the line is a spinner and not a meter:
+/// there is no level to show, and silence is not the same as waiting.
+static SEEN: AtomicBool = AtomicBool::new(false);
 
-/// The newest view of the dictation, so the live line can be redrawn without the provider
-/// being asked again.
+/// The newest level, as the bits of an f32.
+static LEVEL: AtomicU32 = AtomicU32::new(0);
+
+static SPINNER: AtomicU32 = AtomicU32::new(0);
+
+/// The newest view of the dictation, so the line can be redrawn without the provider being
+/// asked again.
 static VIEW: Mutex<String> = Mutex::new(String::new());
+
+/// One line, so whoever is painting it is the only one allowed to.
+static PAINT: Mutex<()> = Mutex::new(());
+
+const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+const FRAMES: [char; 8] = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 
 /// `-v` decides whether anything is shown. Whether it is shown in place depends on stderr
 /// being a terminal, so piping the run to a log file stays readable.
 pub fn configure(verbose: bool) {
   VERBOSE.store(verbose, Ordering::Relaxed);
   TTY.store(std::io::stderr().is_terminal(), Ordering::Relaxed);
+  if enabled() && TTY.load(Ordering::Relaxed) {
+    RUNNING.store(true, Ordering::Relaxed);
+    std::thread::spawn(tick);
+  }
 }
 
-pub fn enabled() -> bool {
+/// The clock the spinner needs: waiting is the one thing that changes nothing else, so
+/// without a beat of its own a connection in progress looks exactly like a stopped process.
+fn tick() {
+  while RUNNING.load(Ordering::Relaxed) {
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    SPINNER.fetch_add(1, Ordering::Relaxed);
+    draw();
+  }
+}
+
+fn enabled() -> bool {
   VERBOSE.load(Ordering::Relaxed)
 }
 
@@ -39,21 +63,16 @@ pub fn partial(text: &str) {
   }
 }
 
-/// The meter. One block per update, read from the loudest sample in what was just read.
-/// It is also the evidence for the difference between a quiet room and a broken run.
+/// The meter: the loudest sample in what was just read. It is also the evidence that tells
+/// a quiet room from a dead pipe.
 pub fn level(samples: &[i16]) {
-  if !enabled() {
-    return;
+  if enabled() {
+    show(samples.iter().map(|sample| sample.unsigned_abs()).max().unwrap_or(0));
   }
-  let mut loudest = 0u16;
-  for sample in samples {
-    loudest = loudest.max(sample.unsigned_abs());
-  }
-  show(loudest)
 }
 
-/// Same thing for a batch provider that already holds a whole buffer of little-endian
-/// samples, so it does not need to invent a conversion of its own.
+/// The same for bytes that are already little-endian samples, so no provider has to write
+/// a conversion of its own to report a level.
 pub fn level_from_bytes(bytes: &[u8]) {
   if enabled() {
     show(
@@ -69,47 +88,49 @@ pub fn level_from_bytes(bytes: &[u8]) {
 }
 
 fn show(loudest: u16) {
-  if let Ok(mut strip) = STRIP.lock() {
-    if strip.len() == CELLS {
-      strip.remove(0);
-    }
-    strip.push(cell(loudest));
-  }
+  SEEN.store(true, Ordering::Relaxed);
+  LEVEL.store(
+    (u32::from(loudest) as f32 / 32767.0).sqrt().to_bits(),
+    Ordering::Relaxed,
+  );
   draw();
 }
 
-/// The block for one reading: squared amplitude, because the ear and the meter both read
-/// loudness roughly that way, not linearly.
-fn cell(loudest: u16) -> char {
-  let level = (u32::from(loudest) as f32 / 32767.0).sqrt();
-  BLOCKS[((level * 7.99) as usize).min(7)]
-}
-
-/// Remove the live line before stdout prints the answer.
+/// Stop the line and remove it, before stdout prints the answer or stderr prints a failure.
+/// Waiting for the lock means an in-flight repaint cannot land on top of what comes next.
 pub fn quiet() {
+  RUNNING.store(false, Ordering::Relaxed);
+  let _guard = PAINT.lock().ok();
   if TTY.load(Ordering::Relaxed) {
     eprint!("\r\x1b[2K");
     let _ = std::io::stderr().flush();
   }
 }
 
-/// The recent levels in brackets, so none of it reads like part of the sentence, and the
-/// words heard so far. Rewritten in place on one line.
 fn draw() {
-  let view = VIEW.lock().map(|view| view.clone()).unwrap_or_default();
-  let strip = STRIP
-    .lock()
-    .map(|strip| {
-      let mut cells = "▁".repeat(CELLS.saturating_sub(strip.len()));
-      cells.extend(strip.iter().copied());
-      cells
-    })
-    .unwrap_or_default();
-  let rendered = if view.trim().is_empty() {
-    format!("[{strip}]")
+  if !enabled() {
+    return;
+  }
+  let Ok(_guard) = PAINT.lock() else { return };
+  if !RUNNING.load(Ordering::Relaxed) {
+    return;
+  }
+  let rendered = if SEEN.load(Ordering::Relaxed) {
+    let block = BLOCKS[((f32::from_bits(LEVEL.load(Ordering::Relaxed)) * 7.99) as usize).min(7)];
+    let view = VIEW.lock().map(|view| view.clone()).unwrap_or_default();
+    if view.trim().is_empty() {
+      block.to_string()
+    } else {
+      format!("{block} {}", fit(&view, width().saturating_sub(2)))
+    }
   } else {
-    format!("[{strip}] {}", fit(&view, width().saturating_sub(CELLS + 3)))
+    FRAMES[SPINNER.load(Ordering::Relaxed) as usize % FRAMES.len()].to_string()
   };
+  // The switch for when the line on screen looks wrong: it says exactly what ji painted,
+  // which tells the reader whether ji wrote it or their terminal drew something else.
+  if std::env::var("JI_TRACE").is_ok() {
+    eprintln!("painted {rendered:?}");
+  }
   if TTY.load(Ordering::Relaxed) {
     eprint!("\r\x1b[2K{rendered}");
     let _ = std::io::stderr().flush();
@@ -173,8 +194,12 @@ mod tests {
 
   #[test]
   fn silence_and_loud_speech_land_on_different_blocks() {
-    assert_eq!(cell(0), '▁');
-    assert_ne!(cell(32000), cell(1));
-    assert_eq!(cell(u16::MAX), '█');
+    assert_eq!(block(0), '▁');
+    assert_ne!(block(32000), block(1));
+    assert_eq!(block(u16::MAX), '█');
+  }
+
+  fn block(loudest: u16) -> char {
+    BLOCKS[((((u32::from(loudest) as f32) / 32767.0).sqrt() * 7.99) as usize).min(7)]
   }
 }

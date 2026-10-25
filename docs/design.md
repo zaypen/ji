@@ -29,7 +29,7 @@ and a concurrency story. Not worth it for the first version.
 | `doubaoime_android.rs` | Doubao IME path: device identity, registration, token, WebSocket session, Opus, pacing, result assembly. |
 | `audiocpp.rs` | The second route: either the live door, where the request body is the reading itself, or the upload door, where the bytes wait for EOF, get a WAV header and go as one multipart request. |
 | `pb.rs` | Hand-written protobuf reader/writer for the gateway's message envelope. |
-| `display.rs` | What `-v` shows: the input level of the last few updates, then the words so far, rewritten on one line. |
+| `display.rs` | What `-v` shows: one line. A spinner while it waits, then the input level and the words so far. |
 | `stop.rs` | Signals: the first one ends the dictation and keeps what was heard, the next one still kills the process. |
 
 `Provider::transcribe` takes a reader plus a callback for interim text and returns the
@@ -90,12 +90,17 @@ still open, and that part *replaces* — it must not be joined to what is alread
 which is the one rule here whose failure would show up in the output as the same words
 printed twice.
 
-**What `-v` shows.** One line: the level of the last twelve updates in brackets, then the
-words heard so far. Nothing else. The steps of the run used to be reported — socket, task,
-session — and they were narration: a line each that said what was about to happen seconds
-before it mattered, and they made the part that does change scroll out of sight. The strip of
-levels is what replaced that evidence: one block that flickers says nothing, a row of them
-shows whether anything is coming and how it moves.
+**What `-v` shows.** One line and nothing else. While it is waiting it turns: a spinner is
+the only honest thing to show there, because waiting is the one state in which nothing else
+changes, and a screen that does not move is indistinguishable from a process that stopped.
+Once bytes arrive it becomes the loudest sample in them, one block, and the words heard so
+far. `⣾ ⣽ ⣻ ▂ 长官好，欢迎收看…`
+
+The steps of the run used to be reported there — socket, task, session — and they were
+narration: each said what was about to happen, seconds before it mattered, and they pushed
+the part that actually changes off the screen. Now the whole display is a single line, which
+means it needs a clock rather than an event to redraw, so there is one thread whose only job
+is a tenth of a second and a lock so that whoever is painting is the only one allowed to.
 
 **Hand-written protobuf.** The gateway protocol has no published `.proto`. The client
 sends one message shape (field 2 app key, 3 `ASR`, 5 method, 6 payload, 7 audio, 8

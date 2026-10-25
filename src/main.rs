@@ -14,7 +14,7 @@ const DEFAULT_MODEL: &str = "qwen3-asr";
 const USAGE: &str = "usage: ffmpeg -f pulse -i default -t 10 -ar 16000 -ac 1 -f s16le - | ji [options]\n       or: timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji\n\nThe transcript is printed when the recording ends, and a signal that ends it works too:\nthe dictation is finished and whatever was heard is printed. Another signal of the same\nkind still kills the process.\n\noptions:
   -p, --provider <name>  doubaoime_android (default) or audiocpp
   -m, --model <id>       model id for the audiocpp provider
-  -v, --verbose          one line: the input level of the last few reads, and the words so far
+  -v, --verbose          one line: a spinner while it waits, then the input level and the words so far
   -h, --help             show this message";
 
 fn main() -> ExitCode {
@@ -24,6 +24,9 @@ fn main() -> ExitCode {
       ExitCode::SUCCESS
     }
     Err(error) => {
+      // The live line has to be gone before a failure is printed, and the run that failed
+      // may have stopped anywhere, including before the answer path got to clean up.
+      display::quiet();
       eprintln!("ji: {error}");
       ExitCode::FAILURE
     }

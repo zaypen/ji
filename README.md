@@ -70,7 +70,7 @@ present; the `opus` crate falls back to building libopus with CMake.
 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji [options]
   -p, --provider <name>  doubaoime_android (default) or audiocpp
   -m, --model <id>       model id for the audiocpp provider (default qwen3-asr)
-  -v, --verbose          one line: the input level of the last few reads, and the words so far
+  -v, --verbose          one line: a spinner while it waits, then the input level and the words so far
   -h, --help             show this message
 ```
 
