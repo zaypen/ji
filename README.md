@@ -44,7 +44,7 @@ bind = Shift+V exec ffmpeg -f pulse -i default -t 10 -ar 16000 -ac 1 -f s16le - 
 bind = Shift+V exec timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji | wtype -
 
 # transcribe a file instead of the microphone
-ffmpeg -i meeting.m4a -ar 16000 -ac 1 -f s16le - | ji --provider custom
+ffmpeg -i meeting.m4a -ar 16000 -ac 1 -f s16le - | ji --provider audiocpp
 ```
 
 Both microphone forms need the recorder to stop on its own terms. `ffmpeg -t N` ends the
@@ -68,9 +68,9 @@ present; the `opus` crate falls back to building libopus with CMake.
 
 ```
 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji [options]
-  -p, --provider <name>  doubaoime_android (default) or custom
-  -m, --model <id>       model id for the custom provider (default qwen3-asr)
-      --log              partial transcripts and protocol steps to stderr
+  -p, --provider <name>  doubaoime_android (default) or audiocpp
+  -m, --model <id>       model id for the audiocpp provider (default qwen3-asr)
+  -v, --verbose          show the input level and the text so far, updated in place
   -h, --help             show this message
 ```
 
@@ -94,15 +94,15 @@ returns 32024.
 | Provider | Where the audio goes | Notes |
 | --- | --- | --- |
 | `doubaoime_android` | Doubao's real-time ASR gateway, reverse engineered from the Android IME client | Default. No account, no key. A device identity is registered once and cached. Can stop working whenever the service changes. |
-| `custom` | An OpenAI-compatible `/v1/audio/transcriptions` endpoint you point at | Batch, not streaming. Needs `JI_CUSTOM_URL`. |
+| `audiocpp` | A server you point `JI_AUDIOCPP_URL` at | Which door the model's name opens: one without `-stream` is recorded and uploaded in one request, one with it is sent as it is captured and answered on the same connection. Needs `JI_AUDIOCPP_URL`. |
 
 Environment defaults, overridden by flags:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `JI_PROVIDER` | `doubaoime_android` | Provider name |
-| `JI_CUSTOM_URL` | none | Base URL of the custom provider, required to use it |
-| `JI_MODEL` | `qwen3-asr` | Model id for the custom provider |
+| `JI_AUDIOCPP_URL` | none | Base URL of the audiocpp provider, required to use it |
+| `JI_MODEL` | `qwen3-asr` | Model id for the audiocpp provider |
 
 ### Device identity
 
@@ -113,7 +113,7 @@ and reused by later runs. Delete that file to force a new identity. Nothing else
 your machine is sent.
 
 Audio sent to either provider is processed by that provider. If you would rather not
-hand speech to ByteDance, run `ji --provider custom` against a server you control.
+hand speech to ByteDance, run `ji --provider audiocpp` against a server you control.
 
 ## Non-goals
 

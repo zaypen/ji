@@ -1,4 +1,4 @@
-mod custom;
+mod audiocpp;
 mod display;
 mod doubaoime_android;
 mod pb;
@@ -12,8 +12,8 @@ use crate::provider::{AsrResult, Provider};
 
 const DEFAULT_MODEL: &str = "qwen3-asr";
 const USAGE: &str = "usage: ffmpeg -f pulse -i default -t 10 -ar 16000 -ac 1 -f s16le - | ji [options]\n       or: timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji\n\nThe transcript is printed when the recording ends, and a signal that ends it works too:\nthe dictation is finished and whatever was heard is printed. Another signal of the same\nkind still kills the process.\n\noptions:
-  -p, --provider <name>  doubaoime_android (default) or custom
-  -m, --model <id>       model id for the custom provider
+  -p, --provider <name>  doubaoime_android (default) or audiocpp
+  -m, --model <id>       model id for the audiocpp provider
   -v, --verbose          show the input level and the current text, updated in place
   -h, --help             show this message";
 
@@ -42,7 +42,7 @@ impl Default for Options {
   fn default() -> Self {
     Options {
       provider: std::env::var("JI_PROVIDER").unwrap_or_else(|_| "doubaoime_android".into()),
-      base_url: std::env::var("JI_CUSTOM_URL").ok(),
+      base_url: std::env::var("JI_AUDIOCPP_URL").ok(),
       model: std::env::var("JI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into()),
       verbose: false,
     }
@@ -98,14 +98,14 @@ fn value(arguments: &[String], cursor: &mut usize, flag: &str) -> AsrResult<Stri
 fn select(options: &Options) -> AsrResult<Box<dyn Provider>> {
   match options.provider.as_str() {
     "doubaoime_android" => Ok(Box::new(doubaoime_android::DoubaoIme)),
-    "custom" => Ok(Box::new(custom::Custom {
+    "audiocpp" => Ok(Box::new(audiocpp::Audiocpp {
       base: options
         .base_url
         .clone()
-        .ok_or("the custom provider needs JI_CUSTOM_URL, which has no default")?,
+        .ok_or("the audiocpp provider needs JI_AUDIOCPP_URL, which has no default")?,
       model: options.model.clone(),
     })),
-    other => Err(format!("unknown provider {other}, expected doubaoime_android or custom.\n{USAGE}").into()),
+    other => Err(format!("unknown provider {other}, expected doubaoime_android or audiocpp.\n{USAGE}").into()),
   }
 }
 
@@ -123,8 +123,8 @@ mod tests {
 
   #[test]
   fn flags_override_the_environment_defaults() {
-    let options = parse(&["--provider".into(), "custom".into(), "-v".into()]).unwrap();
-    assert_eq!(options.provider, "custom");
+    let options = parse(&["--provider".into(), "audiocpp".into(), "-v".into()]).unwrap();
+    assert_eq!(options.provider, "audiocpp");
     assert!(options.verbose);
   }
 

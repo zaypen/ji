@@ -27,7 +27,7 @@ and a concurrency story. Not worth it for the first version.
 | `main.rs` | Command line, stdin, provider choice, exit status. The only place that prints the answer. |
 | `provider.rs` | `trait Provider` and the `AsrResult` alias. Three lines of contract, no behaviour. |
 | `doubaoime_android.rs` | Doubao IME path: device identity, registration, token, WebSocket session, Opus, pacing, result assembly. |
-| `custom.rs` | OpenAI-compatible path: waits for EOF, puts a WAV header on the bytes, multipart upload, JSON reply. |
+| `audiocpp.rs` | The second route: waits for EOF, puts a WAV header on the bytes, uploads one multipart request, reads either one JSON answer or a stream of events. |
 | `pb.rs` | Hand-written protobuf reader/writer for the gateway's message envelope. |
 
 `Provider::transcribe` takes a reader plus a callback for interim text and returns the
@@ -68,6 +68,25 @@ the cleanup is bounded:
 
 `SIGPIPE` and the rest are left alone, so a broken pipe still behaves the way it always
 did.
+
+**Two doors, named by the model.** A model whose name does not end in `-stream` gets the
+upload: wait for EOF, put a WAV header on the bytes, send one multipart request, read one
+JSON answer. A model whose name ends in `-stream` gets the live door, where the request body
+*is* the recording — raw PCM, sent as it arrives, transcript coming back on the same
+connection. That is the door that can answer before the speaker has finished, and it needs
+no container and no multipart body, so there is nothing assembled that can be wrong. The
+parameters in its query string are a promise the stream cannot check: `sample_rate=16000` is
+declared, not verified, so audio that is really 48 kHz produces a confident wrong transcript
+instead of an error. `ji` declares what it always accepts, which closes that hole.
+
+**The shape of a partial answer.** A server that sends pieces uses `transcript.text.delta`
+events that *continue* each other, plus one `transcript.text.done` carrying the whole thing,
+punctuated. This is why the progress display can rewrite a single line instead of scrolling,
+and why it never appends a piece to the previous one: pieces are joined here, not there. A
+model that revises its own half-spoken sentence sends `transcript.text.partial` for the part
+still open, and that part *replaces* — it must not be joined to what is already committed,
+which is the one rule here whose failure would show up in the output as the same words
+printed twice.
 
 **Hand-written protobuf.** The gateway protocol has no published `.proto`. The client
 sends one message shape (field 2 app key, 3 `ASR`, 5 method, 6 payload, 7 audio, 8
@@ -112,7 +131,7 @@ enough that a single attempt fails for a reason no user can act on.
 16 tests, none of which touch the network:
 
 - protobuf golden bytes for both directions, including skipping an unknown field;
-- WAV header layout for the container the custom provider must produce;
+- WAV header layout for the container the audiocpp provider must produce;
 - partial reads of audio padded up to the next valid Opus frame, and EOF;
 - transcript assembly for interim versus final segments;
 - entropy: one `read_exact` from `/dev/urandom` rather than a read-until-EOF loop
@@ -123,7 +142,7 @@ enough that a single attempt fails for a reason no user can act on.
 Live behaviour is verified by hand against both providers:
 
 ```sh
-ffmpeg -i sample.wav -ar 16000 -ac 1 -f s16le - | ji --provider custom
+ffmpeg -i sample.wav -ar 16000 -ac 1 -f s16le - | ji --provider audiocpp
 ffmpeg -i sample.wav -ar 16000 -ac 1 -f s16le - | ji --provider doubaoime_android --log
 ```
 

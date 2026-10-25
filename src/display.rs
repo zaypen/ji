@@ -173,8 +173,8 @@ mod tests {
 
   #[test]
   fn a_long_view_is_cut_on_a_whole_character_and_never_on_a_byte() {
-    let cut = fit("长官好，欢迎收看国际资讯", 9);
-    assert_eq!(cut, "长官好，…");
+    let cut = fit("一二三四五六七八", 9);
+    assert_eq!(cut, "一二三四…");
     assert!(std::str::from_utf8(cut.as_bytes()).is_ok());
   }
 
