@@ -54,6 +54,18 @@ bothers you, knowing that hides whatever else the recorder might have said.
 
 ## Install
 
+The shortest path is the one that does not compile anything, for Apple Silicon Macs:
+
+```sh
+brew tap zaypen/ji && brew install ji
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/zaypen/ji/releases/latest/download/ji-installer.sh | sh
+```
+
+Either form drops a working `ji` on your `PATH`; the second is for people who would rather
+not have Homebrew. Linux has no prebuilt binary, and the reason is in the build settings
+below: libopus would have to already be installed for the binary to run.
+
 The binary is `ji`. `contrib/ji-dictate` is the glue a hotkey presses, and it is optional; both
 land in `~/.local/bin`, which your `PATH` already looks at.
 
@@ -68,8 +80,12 @@ accessibility rights are attached to the executable's path and identity, so a pa
 changes on every rebuild means granting permission again on every rebuild.
 
 `libopus` and `pkg-config` are what the build needs; on macOS, `brew install opus
-pkg-config`. The `opus` crate falls back to building libopus with CMake when `pkg-config`
-finds nothing. The project is also a Nix flake, if you would rather not own a toolchain:
+pkg-config`. Put those on the machine before you build, because the fallback is bad: the
+`opus` crate bundles a libopus whose CMakeLists declares `cmake_minimum_required(VERSION
+3.1)`, and CMake 4 removed compatibility below 3.5, so a machine with no libopus installed
+cannot configure it. The release CI installs opus from Homebrew for exactly this reason.
+
+The project is also a Nix flake, if you would rather not own a toolchain:
 
 ```sh
 nix build                                              # binary at result/bin/ji

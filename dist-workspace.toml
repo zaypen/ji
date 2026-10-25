@@ -10,6 +10,8 @@ ci = "github"
 # The installers to generate for each app
 installers = ["shell", "homebrew"]
 # Push the generated formula to the tap when we release.
+# This needs a secret named HOMEBREW_TAP_TOKEN that can write to zaypen/homebrew-ji. Without
+# it the job fails and the formula has to be committed from the release asset by hand.
 publish-jobs = ["homebrew"]
 # Where the generated Homebrew formula lives; CI commits to it.
 tap = "zaypen/homebrew-ji"
