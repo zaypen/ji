@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# ji glue: press once to start dictating, press the same control again to end.
+#
+# The recorder is what gets stopped, never the transcriber. ji reads a pipe, and when the
+# writer dies it sees the end of the stream, finishes and prints, so the inserter is still
+# there to type it. Signalling the transcriber, or the whole process group, would take the
+# inserter down with it and lose the text.
+#
+# Everything that differs between Linux and macOS is one line inside uname branches. The
+# middle of this script - the fifo, the state file, the wait for the answer - is the same
+# on both.
+#
+# Not tested on macOS. The first run there needs Microphone and Accessibility rights for
+# whatever terminal launches it, and it will fail by typing nothing rather than by failing
+# loudly if you get that wrong.
+set -e
+# Job control, so the reader and everything it spawns form a group of their own. That is how
+# the stop can reach both of them when it needs to, and how it can reach neither when it
+# must not.
+set -m
+
+os=$(uname)
+runtime="${XDG_RUNTIME_DIR:-/tmp}"
+state="$runtime/jid.pid"
+fifo="$runtime/jid.pcm"
+answer="$runtime/jid.answer"
+tone="$runtime/jid.wav"
+log="${XDG_STATE_HOME:-$HOME/.local/state}/ji/dictate.log"
+ji="${JI_BIN:-$HOME/.local/bin/ji}"
+# A dictation that is never ended ends by itself.
+limit="${JID_SECONDS:-60}"
+# macOS: the avfoundation audio index. Find them with:
+#   ffmpeg -f avfoundation -list_devices true -i ""
+# Linux ignores this and records whatever the server says is the default.
+device="${JID_DEVICE:-}"
+# How long the answer is allowed to take after the recorder stops. ji streams what it has,
+# so this is only the tail, but a provider that is stuck must not hang the key.
+patience=40
+
+log_line() { echo "$1" >> "$log"; }
+
+toast() {
+  if [ "$os" = Darwin ]; then
+    osascript -e "display notification \"$2\" with title \"ji\" sound name \"$1\"" 2>> "$log" ||
+      log_line "notification failed: $1 $2"
+  else
+    dms ipc call toast "$1" "$2" >/dev/null 2>&1 || log_line "toast failed: $1 $2"
+  fi
+}
+
+# Two notes of 100 ms, joined. A sine that begins and ends on a sample boundary clicks like
+# a broken speaker, so each note fades out over its last 20 ms, and 0.8 is the ceiling
+# before those fades start hitting the peak. Synthesised rather than read from a file,
+# because the only reason a file would exist is to be read.
+synth() {
+  ffmpeg -v error -f lavfi -i "sine=frequency=$1:duration=0.1" -f lavfi -i "sine=frequency=$2:duration=0.1" \
+    -filter_complex "[0]afade=t=out:st=0.08:d=0.02[a0];[1]afade=t=out:st=0.08:d=0.02[a1];[a0][a1]concat=n=2:v=0:a=1,aformat=sample_fmts=s16:channel_layouts=mono,volume=0.8[out]" \
+    -map "[out]" -f wav - 2>> "$log"
+}
+
+# A sound is faster to notice than a toast, and unlike a toast it does not have to be read.
+# Start rises, stop falls. The start tone goes out before the recorder opens, or the
+# microphone hears it and the dictation begins with a hum.
+sound() {
+  if [ "$os" = Darwin ]; then
+    # afplay wants a file and will not read a pipe, so the wave goes to disk.
+    synth "$1" "$2" > "$tone" && afplay "$tone" || log_line "could not play $1/$2"
+  else
+    synth "$1" "$2" | pw-play --volume 0.6 - 2>> "$log" || log_line "could not play $1/$2"
+  fi
+}
+
+insert() {
+  if [ "$os" = Darwin ]; then
+    # keystroke goes through the active keyboard layout, so characters the layout cannot
+    # map - Chinese above all - can come out as nothing. The pasteboard carries anything,
+    # so the answer goes there and Cmd-V puts it in the field.
+    # shortcut: only plain text is preserved. An image or a rich object you had copied is
+    # gone when this finishes; if that matters, put the whole branch behind a switch.
+    local keep
+    keep=$(pbpaste 2>> "$log" || true)
+    printf '%s' "$(tr -d '\n' < "$1")" | pbcopy
+    osascript -e "tell application \"System Events\" to keystroke \"v\" using command down" 2>> "$log" ||
+      log_line "could not paste"
+    # The paste has to land before the pasteboard goes back. Half a second is enough in
+    # every app here; raise it if you find one that reads the pasteboard late.
+    sleep 0.5
+    printf '%s' "$keep" | pbcopy
+  else
+    # tr drops the newline ji ends its answer with, so dictation into a chat or a terminal
+    # does not also press Enter. Delete it from the pipeline to keep the newline.
+    tr -d '\n' < "$1" | wtype - 2>> "$log" || log_line "could not type"
+  fi
+}
+
+# A simple command, not a function: bash gives you the process's own pid for a command it
+# execs in the background, but only the subshell's pid for a function call, and killing that
+# one leaves ffmpeg recording out of sight. This was a bug; the log proved it.
+if [ "$os" = Darwin ]; then
+  recorder=(ffmpeg -v error -f avfoundation -i ":${device:-0}" -t "$limit" -ar 16000 -ac 1 -f s16le -)
+else
+  recorder=(ffmpeg -v error -f pulse -i default -t "$limit" -ar 16000 -ac 1 -f s16le -)
+fi
+
+mkdir -p "$(dirname "$log")"
+
+if [ -f "$state" ] && kill -0 "$(cut -d' ' -f1 < "$state")" 2>/dev/null; then
+  read -r recorder reader < "$state"
+  kill -TERM "$recorder" 2>/dev/null || :
+  rm -f "$state"
+  sound 880 660
+
+  while [ "$patience" -gt 0 ] && kill -0 "$reader" 2>/dev/null; do
+    sleep 0.5
+    patience=$((patience - 1))
+  done
+  if kill -0 "$reader" 2>/dev/null; then
+    # Still there means the provider is stuck. Drop the whole group: ji has an open stream,
+    # and letting it finish later would type into a field you stopped looking at long ago.
+    kill -TERM -- -"$reader" 2>/dev/null || kill -TERM "$reader" 2>/dev/null || :
+    toast warn "the provider did not answer"
+  elif [ -s "$answer" ]; then
+    toast info "typed: $(tr -d '\n' < "$answer" | head -c 48)"
+  elif [ -s "$log" ]; then
+    # Stopping the recorder early makes ffmpeg complain about a broken pipe, and that noise
+    # is not the news. Prefer what ji had to say, and look no further than the log's first
+    # line when nothing else is there.
+    toast warn "$(grep -m 1 '^ji:' "$log" 2> /dev/null || head -n 1 "$log" | head -c 90)"
+  else
+    toast warn "no answer, and nothing in the log"
+  fi
+  exit 0
+fi
+
+rm -f "$answer"
+: > "$log"
+[ -p "$fifo" ] || mkfifo -m 600 "$fifo"
+
+# ji writes the answer to a file before it is inserted, so the run has a record either way
+# and the stop can report from it. The tone is played here, before the recorder opens.
+(
+  "$ji" < "$fifo" > "$answer" 2>> "$log"
+  insert "$answer"
+) &
+reader=$!
+
+sound 660 880
+
+"${recorder[@]}" > "$fifo" 2>> "$log" &
+echo "$! $reader" > "$state"
+
+toast info "dictating, press again to finish"
