@@ -6,10 +6,7 @@ standard output. It records nothing on its own, binds no hotkey, and pastes into
 text field. Those jobs belong to the programs you already run.
 
 ```
-timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji
-```
-
-```
+$ timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - 2>/dev/null | ji
 今天开会的时间改到下午三点。
 ```
 
@@ -41,7 +38,7 @@ so you compose it:
 bind = Shift+V exec ffmpeg -f pulse -i default -t 10 -ar 16000 -ac 1 -f s16le - | ji | wtype -
 
 # or with pw-cat, where something external has to end the recording
-bind = Shift+V exec timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji | wtype -
+bind = Shift+V exec timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - 2>/dev/null | ji | wtype -
 
 # transcribe a file instead of the microphone
 ffmpeg -i meeting.m4a -ar 16000 -ac 1 -f s16le - | ji --provider audiocpp
@@ -50,6 +47,10 @@ ffmpeg -i meeting.m4a -ar 16000 -ac 1 -f s16le - | ji --provider audiocpp
 Both microphone forms need the recorder to stop on its own terms. `ffmpeg -t N` ends the
 stream, so `记` gets a clean end of file. A timeout that signals the recorder does not:
 the signal travels to the whole pipeline, `记` dies mid-run, and nothing is printed.
+
+`pw-cat` leaves one sign that it was ended rather than that it failed: a lone `-` on
+stderr, which is its own progress output cut off. Silence it with `2>/dev/null` if it
+bothers you, knowing that hides whatever else the recorder might have said.
 
 ## Install
 
