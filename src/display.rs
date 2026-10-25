@@ -10,8 +10,9 @@ static LEVEL: AtomicU32 = AtomicU32::new(0);
 
 const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-/// The newest status and the newest transcript text, so either can be updated alone.
-static LINE: Mutex<Option<(String, String)>> = Mutex::new(None);
+/// The newest view of the dictation, so the live line can be redrawn after a status line
+/// without asking the provider again.
+static VIEW: Mutex<String> = Mutex::new(String::new());
 
 /// `-v` decides whether anything is shown. Whether it is shown in place depends on stderr
 /// being a terminal, so piping the run to a log file stays readable.
@@ -24,10 +25,19 @@ pub fn enabled() -> bool {
   VERBOSE.load(Ordering::Relaxed)
 }
 
-/// A step of the run: the socket, the session, a device identity.
+/// A step of the run: the socket, the session, a device identity. It gets its own line and
+/// stays in the log. It is never mixed into the meter line, because a step that scrolled
+/// past and the words being heard now are two different things to look at.
 pub fn status(text: &str) {
-  if enabled() {
-    keep(text, &partial_text());
+  if !enabled() {
+    return;
+  }
+  if TTY.load(Ordering::Relaxed) {
+    eprint!("\r\x1b[2K{text}\n");
+    let _ = std::io::stderr().flush();
+    draw();
+  } else {
+    eprintln!("{text}");
   }
 }
 
@@ -35,7 +45,10 @@ pub fn status(text: &str) {
 /// why an in-place rewrite is correct: never append to it, never print only the delta.
 pub fn partial(text: &str) {
   if enabled() {
-    keep(&status_text(), text);
+    if let Ok(mut view) = VIEW.lock() {
+      *view = text.to_owned();
+    }
+    draw();
   }
 }
 
@@ -74,7 +87,7 @@ fn show(loudest: u16) {
   // Rising is immediate, falling is decayed, so a word does not flash and vanish.
   let shown = level.max(previous * 0.7);
   LEVEL.store(shown.to_bits(), Ordering::Relaxed);
-  keep(&status_text(), &partial_text());
+  draw();
 }
 
 /// Remove the live line before stdout prints the answer.
@@ -85,44 +98,22 @@ pub fn quiet() {
   }
 }
 
-fn keep(status: &str, text: &str) {
-  if let Ok(mut slot) = LINE.lock() {
-    *slot = Some((status.to_owned(), text.to_owned()));
-  }
+/// Meter plus the words heard so far, rewritten in place on one line. The meter is the
+/// evidence that the audio is arriving; the text is the answer. Nothing else goes here.
+fn draw() {
+  let view = VIEW.lock().map(|view| view.clone()).unwrap_or_default();
   let meter = BLOCKS[((f32::from_bits(LEVEL.load(Ordering::Relaxed)) * 7.99) as usize).min(7)];
-  let message = match (status.trim(), text.trim()) {
-    ("", "") => String::new(),
-    ("", text) => text.to_owned(),
-    (status, "") => status.to_owned(),
-    (status, text) => format!("{status} {text}"),
-  };
-  let rendered = if message.is_empty() {
+  let rendered = if view.trim().is_empty() {
     meter.to_string()
   } else {
-    format!("{meter} {message}")
+    format!("{meter} {}", fit(&view, width().saturating_sub(2)))
   };
   if TTY.load(Ordering::Relaxed) {
-    eprint!("\r\x1b[2K{}", fit(&rendered, width()));
+    eprint!("\r\x1b[2K{rendered}");
     let _ = std::io::stderr().flush();
   } else {
     eprintln!("{rendered}");
   }
-}
-
-fn status_text() -> String {
-  LINE
-    .lock()
-    .ok()
-    .and_then(|slot| slot.as_ref().map(|(status, _)| status.clone()))
-    .unwrap_or_default()
-}
-
-fn partial_text() -> String {
-  LINE
-    .lock()
-    .ok()
-    .and_then(|slot| slot.as_ref().map(|(_, text)| text.clone()))
-    .unwrap_or_default()
 }
 
 /// Terminal width, so a long dictation overwrites its own line instead of pushing text
