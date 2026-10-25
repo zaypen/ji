@@ -157,10 +157,8 @@ impl Session {
 
   /// StartTask then StartSession, waiting for each acknowledgement.
   fn begin(&mut self) -> AsrResult<()> {
-    trace("start task");
     self.control("StartTask", "")?;
     expect(&mut self.socket, "TaskStarted")?;
-    trace("start session");
     self.control("StartSession", &session_config(&self.device))?;
     expect(&mut self.socket, "SessionStarted")?;
     Ok(())
@@ -197,7 +195,6 @@ impl Session {
       state: FrameState::Last,
     })?;
     self.control("FinishSession", "")?;
-    trace("finish session");
     loop {
       let wait = self.patience();
       let response = read(&mut self.socket, wait)?;
@@ -346,7 +343,6 @@ fn connect(device: &Device) -> AsrResult<Socket> {
   );
   headers.insert("Cache-Control", tungstenite::http::HeaderValue::from_static("no-cache"));
   headers.insert("Pragma", tungstenite::http::HeaderValue::from_static("no-cache"));
-  trace("opening the gateway socket");
   let (socket, _) = tungstenite::connect(request)?;
   Ok(socket)
 }
@@ -464,12 +460,9 @@ fn credentials() -> AsrResult<Device> {
     }
   }
   let mut device = identity();
-  trace(&format!("registering a device at {REGISTER_URL}"));
   register(&mut device)?;
-  trace(&format!("fetching a recognition token from {SETTINGS_URL}"));
   issue_token(&mut device)?;
   store(&path, &device)?;
-  trace(&format!("doubao device {}", device.device_id));
   Ok(device)
 }
 
@@ -622,10 +615,6 @@ fn agent() -> ureq::Agent {
 
 const REQUEST_ATTEMPTS: usize = 2;
 const RETRY_PAUSE: Duration = Duration::from_secs(2);
-
-fn trace(message: &str) {
-  crate::display::status(message);
-}
 
 fn numeric(value: &serde_json::Value, key: &str) -> Option<String> {
   match value.get(key) {

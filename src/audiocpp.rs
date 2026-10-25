@@ -18,9 +18,8 @@ impl Provider for Audiocpp {
     if pcm.is_empty() {
       return Err("no audio reached the process".into());
     }
-    // One upload, one answer. The meter has nothing live left to follow because the whole
-    // recording is already here, so it reports how loud everything that arrived was.
-    crate::display::status(&format!("{} bytes captured", pcm.len()));
+    // One upload, one answer. The meter has nothing live left to follow here, because the
+    // whole recording is already in hand, so it shows how loud everything that arrived was.
     crate::display::level_from_bytes(&pcm);
     self.upload(&wave(&pcm), partial)
   }

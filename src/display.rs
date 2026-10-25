@@ -1,17 +1,20 @@
 use std::io::{IsTerminal, Write};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static TTY: AtomicBool = AtomicBool::new(false);
 
-/// Smoothed input level, kept between updates as the bits of an f32.
-static LEVEL: AtomicU32 = AtomicU32::new(0);
-
 const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-/// The newest view of the dictation, so the live line can be redrawn after a status line
-/// without asking the provider again.
+/// The last few levels, oldest first. A strip rather than one block, because one block that
+/// comes and goes says nothing about whether audio is arriving: silence and a stuck recorder
+/// both look like a flat line, and so does a room where nobody has started speaking.
+static STRIP: Mutex<Vec<char>> = Mutex::new(Vec::new());
+const CELLS: usize = 12;
+
+/// The newest view of the dictation, so the live line can be redrawn without the provider
+/// being asked again.
 static VIEW: Mutex<String> = Mutex::new(String::new());
 
 /// `-v` decides whether anything is shown. Whether it is shown in place depends on stderr
@@ -23,22 +26,6 @@ pub fn configure(verbose: bool) {
 
 pub fn enabled() -> bool {
   VERBOSE.load(Ordering::Relaxed)
-}
-
-/// A step of the run: the socket, the session, a device identity. It gets its own line and
-/// stays in the log. It is never mixed into the meter line, because a step that scrolled
-/// past and the words being heard now are two different things to look at.
-pub fn status(text: &str) {
-  if !enabled() {
-    return;
-  }
-  if TTY.load(Ordering::Relaxed) {
-    eprint!("\r\x1b[2K{text}\n");
-    let _ = std::io::stderr().flush();
-    draw();
-  } else {
-    eprintln!("{text}");
-  }
 }
 
 /// The complete view of the dictation so far. Providers replace this wholesale, which is
@@ -82,12 +69,20 @@ pub fn level_from_bytes(bytes: &[u8]) {
 }
 
 fn show(loudest: u16) {
-  let level = (u32::from(loudest) as f32 / 32767.0).sqrt();
-  let previous = f32::from_bits(LEVEL.swap(level.to_bits(), Ordering::Relaxed));
-  // Rising is immediate, falling is decayed, so a word does not flash and vanish.
-  let shown = level.max(previous * 0.7);
-  LEVEL.store(shown.to_bits(), Ordering::Relaxed);
+  if let Ok(mut strip) = STRIP.lock() {
+    if strip.len() == CELLS {
+      strip.remove(0);
+    }
+    strip.push(cell(loudest));
+  }
   draw();
+}
+
+/// The block for one reading: squared amplitude, because the ear and the meter both read
+/// loudness roughly that way, not linearly.
+fn cell(loudest: u16) -> char {
+  let level = (u32::from(loudest) as f32 / 32767.0).sqrt();
+  BLOCKS[((level * 7.99) as usize).min(7)]
 }
 
 /// Remove the live line before stdout prints the answer.
@@ -98,15 +93,22 @@ pub fn quiet() {
   }
 }
 
-/// Meter plus the words heard so far, rewritten in place on one line. The meter is the
-/// evidence that the audio is arriving; the text is the answer. Nothing else goes here.
+/// The recent levels in brackets, so none of it reads like part of the sentence, and the
+/// words heard so far. Rewritten in place on one line.
 fn draw() {
   let view = VIEW.lock().map(|view| view.clone()).unwrap_or_default();
-  let meter = BLOCKS[((f32::from_bits(LEVEL.load(Ordering::Relaxed)) * 7.99) as usize).min(7)];
+  let strip = STRIP
+    .lock()
+    .map(|strip| {
+      let mut cells = "▁".repeat(CELLS.saturating_sub(strip.len()));
+      cells.extend(strip.iter().copied());
+      cells
+    })
+    .unwrap_or_default();
   let rendered = if view.trim().is_empty() {
-    meter.to_string()
+    format!("[{strip}]")
   } else {
-    format!("{meter} {}", fit(&view, width().saturating_sub(2)))
+    format!("[{strip}] {}", fit(&view, width().saturating_sub(CELLS + 3)))
   };
   if TTY.load(Ordering::Relaxed) {
     eprint!("\r\x1b[2K{rendered}");
@@ -171,13 +173,8 @@ mod tests {
 
   #[test]
   fn silence_and_loud_speech_land_on_different_blocks() {
-    assert_eq!(block_of(&[0i16, 1, -1]), '▁');
-    assert_ne!(block_of(&[32000i16]), block_of(&[1i16]));
-  }
-
-  /// Independent of the smoothing between calls, which the live line also applies.
-  fn block_of(samples: &[i16]) -> char {
-    let loudest = samples.iter().map(|sample| sample.unsigned_abs()).max().unwrap_or(0);
-    BLOCKS[((((u32::from(loudest) as f32) / 32767.0).sqrt() * 7.99) as usize).min(7)]
+    assert_eq!(cell(0), '▁');
+    assert_ne!(cell(32000), cell(1));
+    assert_eq!(cell(u16::MAX), '█');
   }
 }
