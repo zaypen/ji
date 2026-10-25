@@ -1,0 +1,24 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.31.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "homebrew"]
+# Push the generated formula to the tap when we release.
+publish-jobs = ["homebrew"]
+# Where the generated Homebrew formula lives; CI commits to it.
+tap = "zaypen/homebrew-ji"
+# Target platforms to build apps for (Rust target-triple syntax)
+#
+# Apple Silicon only. Windows and Intel Macs are machines nobody here owns, and every target
+# is a build nobody tests. Linux is left out on purpose: libopus links dynamically on
+# glibc, so a Linux tarball out of CI dies at startup with "libopus.so.0: cannot open shared
+# object" anywhere that does not already have it. Linux is served by the flake, which builds
+# against opus properly. If a Linux binary is ever wanted, the fix is to link opus
+# statically, not to add a target.
+targets = ["aarch64-apple-darwin"]
