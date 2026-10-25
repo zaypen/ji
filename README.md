@@ -54,6 +54,26 @@ bothers you, knowing that hides whatever else the recorder might have said.
 
 ## Install
 
+### Prerequisites
+
+`ji` itself is a filter and asks for nothing at run time. Everything that is easy to assume
+away belongs to the pieces you compose it with:
+
+| | `ji` reading a pipe | `ji-dictate` at a hotkey |
+| --- | --- | --- |
+| build | `libopus`, `pkg-config` | same |
+| record | your problem, or `ffmpeg` | `ffmpeg`, started for you |
+| insert | none, it prints | `wtype` on Wayland; nothing extra on macOS |
+| tone | none | `pw-play` on Linux; `afplay` is already on macOS |
+
+So on Linux the short list is `ffmpeg` and `wtype`. macOS needs `ffmpeg` and nothing else, as
+far as typing goes: the pasteboard, `osascript` and `afplay` are parts of the system, which is
+why the Mac side picked them. `cmake` is not a prerequisite any more, and will not save you —
+the opus copy that ships with `audiopus_sys` cannot configure itself on CMake 4, so install
+libopus and let `pkg-config` find it.
+
+`JI_AUDIOCPP_URL` is needed only for the `audiocpp` provider, and has no default on purpose.
+
 The shortest path is the one that does not compile anything, for Apple Silicon Macs:
 
 ```sh
