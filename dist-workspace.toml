@@ -22,3 +22,11 @@ tap = "zaypen/homebrew-ji"
 # against opus properly. If a Linux binary is ever wanted, the fix is to link opus
 # statically, not to add a target.
 targets = ["aarch64-apple-darwin"]
+
+# libopus has to come from the system, not from the vendored copy. audiopus_sys vendors an
+# opus whose CMakeLists says cmake_minimum_required(VERSION 3.1), and CMake 4 dropped
+# compatibility with anything below 3.5, so that copy cannot configure on a modern machine.
+# The nix devShell gets away with it only because it installs opus and pkg_config finds that
+# first. "run" also puts depends_on "opus" in the formula.
+[dist.dependencies.homebrew]
+opus = { stage = ["build", "run"] }
