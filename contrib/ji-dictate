@@ -21,18 +21,18 @@ set -m
 
 os=$(uname)
 runtime="${XDG_RUNTIME_DIR:-/tmp}"
-state="$runtime/jid.pid"
-fifo="$runtime/jid.pcm"
-answer="$runtime/jid.answer"
-tone="$runtime/jid.wav"
+state="$runtime/ji-dictate.pid"
+fifo="$runtime/ji-dictate.pcm"
+answer="$runtime/ji-dictate.answer"
+tone="$runtime/ji-dictate.wav"
 log="${XDG_STATE_HOME:-$HOME/.local/state}/ji/dictate.log"
 ji="${JI_BIN:-$HOME/.local/bin/ji}"
 # A dictation that is never ended ends by itself.
-limit="${JID_SECONDS:-60}"
+limit="${DICTATE_SECONDS:-60}"
 # macOS: the avfoundation audio index. Find them with:
 #   ffmpeg -f avfoundation -list_devices true -i ""
 # Linux ignores this and records whatever the server says is the default.
-device="${JID_DEVICE:-}"
+device="${DICTATE_DEVICE:-}"
 # How long the answer is allowed to take after the recorder stops. ji streams what it has,
 # so this is only the tail, but a provider that is stuck must not hang the key.
 patience=40

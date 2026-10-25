@@ -54,12 +54,12 @@ bothers you, knowing that hides whatever else the recorder might have said.
 
 ## Install
 
-The binary is `ji`. `contrib/jid` is the glue a hotkey presses, and it is optional; both
+The binary is `ji`. `contrib/ji-dictate` is the glue a hotkey presses, and it is optional; both
 land in `~/.local/bin`, which your `PATH` already looks at.
 
 ```sh
 cargo install --path . --root ~/.local
-install -m 755 contrib/jid ~/.local/bin/jid
+install -m 755 contrib/ji-dictate ~/.local/bin/ji-dictate
 ```
 
 `ji` goes in as a real file, not a link into `target/`. `cargo clean` then cannot leave a
@@ -79,19 +79,19 @@ nix develop --command cargo install --path . --root ~/.local
 ### Pressing a key
 
 ```sh
-jid     # start dictating
-jid     # run it again to stop; the answer is typed into what is focused
+ji-dictate     # start dictating
+ji-dictate     # run it again to stop; the answer is typed into what is focused
 ```
 
-`jid` is the composition from the section above, plus the four things a shell one-liner
+`ji-dictate` is the composition from the section above, plus the four things a shell one-liner
 cannot get right. It signals the recorder and never the transcriber, so `ji` sees the
 stream end and prints while the inserter is still alive. It records the pids it needs in
-`$XDG_RUNTIME_DIR/jid.pid` instead of guessing. It stops on its own after `JID_SECONDS` if
+`$XDG_RUNTIME_DIR/ji-dictate.pid` instead of guessing. It stops on its own after `DICTATE_SECONDS` if
 you never press the key. It answers out loud on both presses, with a rising tone to start
 and a falling one to end plus what landed, because a dictation you cannot tell apart from a
 hang is no use to anybody.
 
-The knobs are `JI_BIN`, `JID_SECONDS`, and `JID_DEVICE` for the macOS device index; Linux
+The knobs are `JI_BIN`, `DICTATE_SECONDS`, and `DICTATE_DEVICE` for the macOS device index; Linux
 records whatever the server calls the default. The first run on macOS needs Microphone and
 Accessibility for the terminal that launches it, and it will fail by typing nothing rather
 than by failing loudly if that is wrong.
@@ -100,7 +100,7 @@ Bind the key in whatever sends keys on your machine. On niri that is dms, and th
 to be absolute:
 
 ```sh
-dms keybinds set niri F13 "spawn /home/you/.local/bin/jid" --desc "Dictate (ji)"
+dms keybinds set niri F13 "spawn /home/you/.local/bin/ji-dictate" --desc "Dictate (ji)"
 niri msg action load-config-file
 ```
 
