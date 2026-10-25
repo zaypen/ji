@@ -7,7 +7,7 @@ text field. Those jobs belong to the programs you already run.
 
 ```
 $ timeout 10 pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - 2>/dev/null | ji
-今天开会的时间改到下午三点。
+The meeting today moved to three in the afternoon.
 ```
 
 One line in, one line out. Everything it knows is: read bytes, ask a provider, print

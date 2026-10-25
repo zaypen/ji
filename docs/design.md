@@ -94,7 +94,7 @@ printed twice.
 the only honest thing to show there, because waiting is the one state in which nothing else
 changes, and a screen that does not move is indistinguishable from a process that stopped.
 Once bytes arrive it becomes the loudest sample in them, one block, and the words heard so
-far. `⣾ ⣽ ⣻ ▂ 长官好，欢迎收看…`
+far. `⣾ ⣽ ⣻ ▂ the meeting today moved to three in…`
 
 The steps of the run used to be reported there — socket, task, session — and they were
 narration: each said what was about to happen, seconds before it mattered, and they pushed
