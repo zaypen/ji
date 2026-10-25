@@ -130,6 +130,12 @@ map, not the arrival order, fixes the sentence order.
 is what the gateway expects to see. The identity is cached so repeat runs look like the
 same handset. Re-registering on every run is the fastest way to be rate limited.
 
+**A credential that went bad.** The gateway refuses the session before any audio has been
+spent, which is the only moment where trying again costs nothing, so that is where it
+happens: one new token, one retry. A token fetched a moment ago is not retried, because
+then it was never the difference between the first failure and the second, and the run that
+fails twice says which file was used and that deleting it starts over.
+
 ## Error handling
 
 Everything is `Result<_, Box<dyn Error>>`. Failures surface in `main`, which writes

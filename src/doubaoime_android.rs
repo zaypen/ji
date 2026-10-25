@@ -38,6 +38,13 @@ const DEVICE_MODEL: &str = "Pixel 7 Pro";
 const REGISTER_URL: &str = "https://log.snssdk.com/service/2/device_register/";
 const SETTINGS_URL: &str = "https://is.snssdk.com/service/settings/v3/";
 const GATEWAY: &str = "wss://frontier-audio-ime-ws.doubao.com/ocean/api/v1/ws";
+
+/// Where the gateway is reached. These three are the part of a reverse-engineered protocol
+/// most likely to move, and when one moves the fix should be the environment, not a build.
+/// JI_DOUBAO_REGISTER, JI_DOUBAO_SETTINGS, JI_DOUBAO_GATEWAY.
+fn endpoint(name: &str, fallback: &str) -> String {
+  std::env::var(name).unwrap_or_else(|_| fallback.to_owned())
+}
 const USER_AGENT: &str = "com.bytedance.android.doubaoime/100102018 (Linux; U; Android 16; \
                           en_US; Pixel 7 Pro; Build/BP2A.250605.031.A2; \
                           Cronet/TTNetVersion:94cf429a 2025-11-17 QuicVersion:1f89f732 2025-05-08)";
@@ -112,8 +119,28 @@ impl Transcript {
 
 impl Provider for DoubaoIme {
   fn transcribe(&self, audio: &mut dyn Read, partial: &mut dyn FnMut(&str)) -> AsrResult<String> {
-    let device = credentials()?;
-    let mut session = Session::open(&device)?;
+    let path = state_path()?;
+    let (mut device, fresh) = credentials()?;
+    let mut session = match Session::open(&device) {
+      Ok(session) => session,
+      // A token that went bad says so here, and nowhere costs less: not a byte of the
+      // dictation has been spent yet, so nothing has to be repeated. It is only a suspect
+      // when it came off the disk — one fetched a moment ago is not the difference.
+      Err(first) => {
+        if fresh {
+          return Err(first);
+        }
+        issue_token(&mut device)?;
+        store(&path, &device)?;
+        Session::open(&device).map_err(|second| -> Box<dyn std::error::Error> {
+          format!(
+            "{second}\nthe device cached in {} was refused twice, the second time with a token just fetched. If it stays refused, delete that file and let a new device be registered.",
+            path.display()
+          )
+          .into()
+        })?
+      }
+    };
     session.stream(audio, partial)?;
     session.finish(partial)
   }
@@ -145,7 +172,7 @@ impl Session {
     let mut session = Session {
       socket: connect(device)?,
       device: device.clone(),
-      request_id: random_uuid(),
+      request_id: random_uuid()?,
       encoder: Encoder::new(SAMPLE_RATE, Channels::Mono, Application::Voip)?,
       transcript: Transcript::default(),
       packets: 0,
@@ -328,7 +355,11 @@ fn expect(socket: &mut Socket, wanted: &str) -> AsrResult<()> {
 }
 
 fn connect(device: &Device) -> AsrResult<Socket> {
-  let url = format!("{GATEWAY}?aid={AID}&device_id={}", device.device_id);
+  let url = format!(
+    "{}?aid={AID}&device_id={}",
+    endpoint("JI_DOUBAO_GATEWAY", GATEWAY),
+    device.device_id
+  );
   let mut request = url.into_client_request()?;
   let headers = request.headers_mut();
   headers.insert("User-Agent", tungstenite::http::HeaderValue::from_str(USER_AGENT)?);
@@ -450,24 +481,31 @@ fn session_config(device: &Device) -> String {
   .to_string()
 }
 
-fn credentials() -> AsrResult<Device> {
+/// The device to speak for, and whether its token was just fetched rather than read from
+/// disk. Disk is the interesting half: that token may be weeks old and nothing in the file
+/// says so.
+fn credentials() -> AsrResult<(Device, bool)> {
   let path = state_path()?;
   if let Ok(text) = std::fs::read_to_string(&path) {
     if let Ok(device) = serde_json::from_str::<Device>(&text) {
       if device.ready() {
-        return Ok(device);
+        return Ok((device, false));
       }
     }
   }
-  let mut device = identity();
+  let mut device = identity()?;
   register(&mut device)?;
   issue_token(&mut device)?;
   store(&path, &device)?;
-  Ok(device)
+  Ok((device, true))
 }
 
 fn register(device: &mut Device) -> AsrResult<()> {
-  let url = format!("{REGISTER_URL}?{}", common_query(device, false));
+  let url = format!(
+    "{}?{}",
+    endpoint("JI_DOUBAO_REGISTER", REGISTER_URL),
+    common_query(device, false)
+  );
   let body = serde_json::json!({
     "magic_tag": "ss_app_log",
     "header": register_header(device),
@@ -485,7 +523,11 @@ fn register(device: &mut Device) -> AsrResult<()> {
 }
 
 fn issue_token(device: &mut Device) -> AsrResult<()> {
-  let url = format!("{SETTINGS_URL}?{}", common_query(device, true));
+  let url = format!(
+    "{}?{}",
+    endpoint("JI_DOUBAO_SETTINGS", SETTINGS_URL),
+    common_query(device, true)
+  );
   let text = post_json_with_stub(&url, EMPTY_BODY)?;
   let value: serde_json::Value = serde_json::from_str(&text)?;
   value
@@ -636,39 +678,47 @@ fn store(path: &Path, device: &Device) -> AsrResult<()> {
   if let Some(directory) = path.parent() {
     std::fs::create_dir_all(directory)?;
   }
-  std::fs::write(path, serde_json::to_string_pretty(device)?)?;
-  // The file holds the recognition token, so keep it off the rest of the account.
-  std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+  // Written under another name and moved into place, so a run killed halfway cannot leave a
+  // half-written file where the next run reads its credentials. The pid keeps two processes
+  // starting at once out of each other's temporary file.
+  let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
+  let written = std::fs::write(&temporary, serde_json::to_string_pretty(device)?)
+    .and_then(|_| std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600)))
+    .and_then(|_| std::fs::rename(&temporary, path));
+  if written.is_err() {
+    let _ = std::fs::remove_file(&temporary);
+  }
+  written?;
   Ok(())
 }
 
-fn identity() -> Device {
-  Device {
-    cdid: random_uuid(),
-    openudid: random_hex(8),
-    clientudid: random_uuid(),
+fn identity() -> AsrResult<Device> {
+  Ok(Device {
+    cdid: random_uuid()?,
+    openudid: random_hex(8)?,
+    clientudid: random_uuid()?,
     ..Device::default()
-  }
+  })
 }
 
-fn random_uuid() -> String {
-  let text = random_hex(16);
-  format!(
+fn random_uuid() -> AsrResult<String> {
+  let text = random_hex(16)?;
+  Ok(format!(
     "{}-{}-{}-{}-{}",
     &text[0..8],
     &text[8..12],
     &text[12..16],
     &text[16..20],
     &text[20..32]
-  )
+  ))
 }
 
-fn random_hex(count: usize) -> String {
+fn random_hex(count: usize) -> AsrResult<String> {
   let mut bytes = vec![0u8; count];
   std::fs::File::open("/dev/urandom")
     .and_then(|mut noise| noise.read_exact(&mut bytes))
-    .expect("cannot read /dev/urandom for entropy");
-  bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    .map_err(|error| format!("cannot read /dev/urandom for entropy: {error}").into())
+    .map(|_| bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn now_millis() -> u64 {
@@ -707,20 +757,26 @@ mod tests {
   fn stored_credentials_are_not_readable_by_the_rest_of_the_account() {
     let directory = std::env::temp_dir().join(format!("ji-store-{}", std::process::id()));
     let path = directory.join("device.json");
-    let mut device = identity();
+    let mut device = identity().unwrap();
     device.device_id = "42".into();
     device.token = "secret".into();
     store(&path, &device).unwrap();
     let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+    // Written elsewhere and moved, so the directory is left with the one file that matters.
+    let left: Vec<_> = std::fs::read_dir(&directory)
+      .unwrap()
+      .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+      .collect();
     std::fs::remove_dir_all(&directory).unwrap();
+    assert_eq!(left, ["device.json".to_owned()]);
     assert_eq!(mode & 0o077, 0);
   }
 
   #[test]
   fn entropy_comes_from_a_single_read_of_urandom() {
-    let first = random_hex(8);
+    let first = random_hex(8).unwrap();
     assert_eq!(first.len(), 16);
-    assert_ne!(first, random_hex(8));
+    assert_ne!(first, random_hex(8).unwrap());
   }
 
   #[test]
