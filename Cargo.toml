@@ -17,6 +17,12 @@ ureq = "2"
 opus = "0.3"
 libc = "0.2"
 
+# The glue that a hotkey presses, delivered as a binary because installers install binaries.
+# See src/dictate.rs; the logic stays in contrib/ji-dictate.
+[[bin]]
+name = "ji-dictate"
+path = "src/dictate.rs"
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"

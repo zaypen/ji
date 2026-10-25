@@ -63,7 +63,8 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 ```
 
 Either form drops a working `ji` on your `PATH`; the second is for people who would rather
-not have Homebrew. Linux has no prebuilt binary, and the reason is in the build settings
+not have Homebrew. Both install `ji-dictate` next to it, so nothing else is needed before the
+first dictation. Linux has no prebuilt binary, and the reason is in the build settings
 below: libopus would have to already be installed for the binary to run.
 
 The binary is `ji`. `contrib/ji-dictate` is the glue a hotkey presses, and it is optional; both
@@ -110,9 +111,32 @@ hang is no use to anybody.
 The knobs are `JI_BIN`, `DICTATE_SECONDS`, and `DICTATE_DEVICE`, which selects the input on
 either system and defaults to the system default device. Pass it an index or a device name;
 for the macOS choices, run `ffmpeg -f avfoundation -list_devices true -i ""`. Index `0` is
-the first device found, not the default one, so set it only if you actually meant one. The
-first run on macOS needs Microphone and Accessibility for the terminal that launches it, and
-it will fail by typing nothing rather than by failing loudly if that is wrong.
+the first device found, not the default one, so set it only if you actually meant one.
+
+### Permissions on macOS
+
+A command-line tool never appears in the privacy list, and this is not something `ji` got
+wrong. Rights attach to the responsible process, and for anything started from a shell that
+is the terminal, so `ji` is asked for nothing; the terminal is asked once, and every command
+that can run in that window has both Microphone and Accessibility for as long as the grant
+stands. Tools of this shape all behave this way.
+
+So treat the grants as decisions rather than as setup:
+
+* The pasteboard needs no permission of its own. Only the Cmd-V that follows it needs
+  Accessibility, which is why the answer travels through the clipboard instead of through
+  keystrokes a keyboard layout might not be able to express.
+* The first dictation fails quietly if the grants are missing: the recorder returns nothing or
+  the paste does nothing, and `ji-dictate` reports both. Check Microphone and Accessibility
+  for the terminal before blaming the script.
+* If something is on your mind that the microphone should not catch, take the grant away
+  while you are not dictating. The switch in Settings covers the microphone, and
+  `tccutil reset Accessibility <terminal bundle id>` puts the Accessibility dialog back.
+* Everything you grant the terminal is available to whatever it runs. That is a fair thing to
+  mind, and the honest answer is that a script in a terminal cannot fix it. The alternative is
+  an application bundle, which is where the microphone dialog would name `ji-dictate` instead
+  of your terminal. It is not something this project ships, because it is a second thing to
+  build and trust, and it does not remove the exposure, only moves it.
 
 Bind the key in whatever sends keys on your machine. On niri that is dms, and the path has
 to be absolute:
