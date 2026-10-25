@@ -29,10 +29,12 @@ log="${XDG_STATE_HOME:-$HOME/.local/state}/ji/dictate.log"
 ji="${JI_BIN:-$HOME/.local/bin/ji}"
 # A dictation that is never ended ends by itself.
 limit="${DICTATE_SECONDS:-60}"
-# macOS: the avfoundation audio index. Find them with:
-#   ffmpeg -f avfoundation -list_devices true -i ""
-# Linux ignores this and records whatever the server says is the default.
-device="${DICTATE_DEVICE:-}"
+# The input device, and "default" is what both halves mean by default: on Linux that is the
+# source PipeWire says is the default, on macOS it is the system default input. Say
+# ffmpeg -f avfoundation -list_devices true -i "" to see what else is there, and pass either
+# its index or its name. Zero is an index, not the default - on a machine with three inputs
+# they are not the same device.
+device="${DICTATE_DEVICE:-default}"
 # How long the answer is allowed to take after the recorder stops. ji streams what it has,
 # so this is only the tail, but a provider that is stuck must not hang the key.
 patience=40
@@ -97,9 +99,9 @@ insert() {
 # execs in the background, but only the subshell's pid for a function call, and killing that
 # one leaves ffmpeg recording out of sight. This was a bug; the log proved it.
 if [ "$os" = Darwin ]; then
-  recorder=(ffmpeg -v error -f avfoundation -i ":${device:-0}" -t "$limit" -ar 16000 -ac 1 -f s16le -)
+  recorder=(ffmpeg -v error -f avfoundation -i ":$device" -t "$limit" -ar 16000 -ac 1 -f s16le -)
 else
-  recorder=(ffmpeg -v error -f pulse -i default -t "$limit" -ar 16000 -ac 1 -f s16le -)
+  recorder=(ffmpeg -v error -f pulse -i "$device" -t "$limit" -ar 16000 -ac 1 -f s16le -)
 fi
 
 mkdir -p "$(dirname "$log")"

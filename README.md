@@ -107,10 +107,12 @@ you never press the key. It answers out loud on both presses, with a rising tone
 and a falling one to end plus what landed, because a dictation you cannot tell apart from a
 hang is no use to anybody.
 
-The knobs are `JI_BIN`, `DICTATE_SECONDS`, and `DICTATE_DEVICE` for the macOS device index; Linux
-records whatever the server calls the default. The first run on macOS needs Microphone and
-Accessibility for the terminal that launches it, and it will fail by typing nothing rather
-than by failing loudly if that is wrong.
+The knobs are `JI_BIN`, `DICTATE_SECONDS`, and `DICTATE_DEVICE`, which selects the input on
+either system and defaults to the system default device. Pass it an index or a device name;
+for the macOS choices, run `ffmpeg -f avfoundation -list_devices true -i ""`. Index `0` is
+the first device found, not the default one, so set it only if you actually meant one. The
+first run on macOS needs Microphone and Accessibility for the terminal that launches it, and
+it will fail by typing nothing rather than by failing loudly if that is wrong.
 
 Bind the key in whatever sends keys on your machine. On niri that is dms, and the path has
 to be absolute:
