@@ -29,6 +29,10 @@ targets = ["aarch64-apple-darwin"]
 # opus whose CMakeLists says cmake_minimum_required(VERSION 3.1), and CMake 4 dropped
 # compatibility with anything below 3.5, so that copy cannot configure on a modern machine.
 # The nix devShell gets away with it only because it installs opus and pkg_config finds that
-# first. "run" also puts depends_on "opus" in the formula.
+# first.
+#
+# Build only, not run: on macOS audiopus_sys links opus statically, and the released binary
+# lists /usr/lib/libiconv.2.dylib and libSystem as its only dependencies, so the formula has
+# no runtime library to ask for.
 [dist.dependencies.homebrew]
-opus = { stage = ["build", "run"] }
+opus = { stage = ["build"] }
