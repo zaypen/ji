@@ -15,6 +15,7 @@ const USAGE: &str = "usage: ffmpeg -f pulse -i default -t 10 -ar 16000 -ac 1 -f 
   -p, --provider <name>  doubaoime_android (default) or audiocpp
   -m, --model <id>       model id for the audiocpp provider
   -v, --verbose          one line: a spinner while it waits, then the input level and the words so far
+  -V, --version          print the version and stop
   -h, --help             show this message";
 
 fn main() -> ExitCode {
@@ -75,6 +76,10 @@ fn parse(arguments: &[String]) -> AsrResult<Options> {
     cursor += 1;
     match flag {
       "-v" | "--verbose" => options.verbose = true,
+      "-V" | "--version" => {
+        println!("ji {}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+      }
       "-h" | "--help" => {
         println!("{USAGE}");
         std::process::exit(0);
@@ -112,12 +117,37 @@ fn select(options: &Options) -> AsrResult<Box<dyn Provider>> {
   }
 }
 
-fn transcribe(provider: &dyn Provider, mut audio: impl Read, log: &mut dyn FnMut(&str)) -> AsrResult<String> {
-  let text = provider.transcribe(&mut audio, log)?.trim().to_owned();
+fn transcribe(provider: &dyn Provider, audio: impl Read, log: &mut dyn FnMut(&str)) -> AsrResult<String> {
+  let mut source = Counted { inner: audio, bytes: 0 };
+  let text = provider.transcribe(&mut source, log)?.trim().to_owned();
   if text.is_empty() {
-    return Err("the gateway heard nothing".into());
+    // Without this the two reasons come out identically: a quiet room, and bytes that were
+    // never what they claimed to be. Seconds is the number that tells them apart.
+    return Err(
+      format!(
+        "nothing was recognised in {:.1} seconds of audio ({} bytes at 16 kHz mono s16le)",
+        source.bytes as f64 / 32000.0,
+        source.bytes
+      )
+      .into(),
+    );
   }
   Ok(text)
+}
+
+/// How much of stdin actually reached the provider. The meter cannot say it, because the
+/// meter is about loudness and this is about whether there was anything to measure.
+struct Counted<R> {
+  inner: R,
+  bytes: u64,
+}
+
+impl<R: Read> Read for Counted<R> {
+  fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+    let got = self.inner.read(buffer)?;
+    self.bytes += got as u64;
+    Ok(got)
+  }
 }
 
 #[cfg(test)]

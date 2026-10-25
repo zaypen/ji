@@ -72,6 +72,7 @@ pw-cat --record --container=raw --format=s16 --rate=16000 --channels=1 - | ji [o
   -p, --provider <name>  doubaoime_android (default) or audiocpp
   -m, --model <id>       model id for the audiocpp provider (default qwen3-asr)
   -v, --verbose          one line: a spinner while it waits, then the input level and the words so far
+  -V, --version          print the version and stop
   -h, --help             show this message
 ```
 
@@ -104,6 +105,9 @@ Environment defaults, overridden by flags:
 | `JI_PROVIDER` | `doubaoime_android` | Provider name |
 | `JI_AUDIOCPP_URL` | none | Base URL of the audiocpp provider, required to use it |
 | `JI_MODEL` | `qwen3-asr` | Model id for the audiocpp provider |
+| `JI_DOUBAO_REGISTER` | `https://log.snssdk.com/...` | Where the first provider registers a device |
+| `JI_DOUBAO_SETTINGS` | `https://is.snssdk.com/...` | Where it gets the recognition token |
+| `JI_DOUBAO_GATEWAY` | `wss://frontier-audio-ime-ws.doubao.com/...` | Where the audio goes |
 
 ### Device identity
 
