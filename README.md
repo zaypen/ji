@@ -1,6 +1,6 @@
-# 记 (Ji)
+# Ji (记)
 
-`记` is a command-line voice input tool for Linux. It reads 16 kHz mono PCM from
+`ji` is a command-line voice input tool for Linux. It reads 16 kHz mono PCM from
 standard input, sends it to a speech recognizer, and prints the transcript on
 standard output. It records nothing on its own, binds no hotkey, and pastes into no
 text field. Those jobs belong to the programs you already run.
@@ -13,9 +13,9 @@ The meeting today moved to three in the afternoon.
 One line in, one line out. Everything it knows is: read bytes, ask a provider, print
 text.
 
-The end of the pipe is what `记` takes as "I have finished speaking", so the recorder
+The end of the pipe is what `ji` takes as "I have finished speaking", so the recorder
 has to stop: `ffmpeg -t N`, `timeout N`, `pw-cat --sample-count N`, or `Ctrl-C`. All of
-them end up with a transcript, because `记` answers the signals that end a recording —
+them end up with a transcript, because `ji` answers the signals that end a recording —
 `SIGINT` from the keyboard, `SIGTERM` from `timeout` and from shutdown — by finishing the
 dictation and printing what the gateway already heard. This matters in fish, where
 `timeout` signals the whole pipeline rather than only the recorder. A signal-stopped run
@@ -30,7 +30,7 @@ the one you had in mind; find it with `wpctl status` and name the node you want.
 
 Chinese dictation on Linux is usually either a heavyweight input-method app or a
 cloud demo, and neither is a good Unix citizen: it owns your input focus, hides the
-recognition behind a GUI, and cannot be piped. `记` is the middle piece of a pipeline,
+recognition behind a GUI, and cannot be piped. `ji` is the middle piece of a pipeline,
 so you compose it:
 
 ```sh
@@ -45,8 +45,8 @@ ffmpeg -i meeting.m4a -ar 16000 -ac 1 -f s16le - | ji --provider audiocpp
 ```
 
 Both microphone forms need the recorder to stop on its own terms. `ffmpeg -t N` ends the
-stream, so `记` gets a clean end of file. A timeout that signals the recorder does not:
-the signal travels to the whole pipeline, `记` dies mid-run, and nothing is printed.
+stream, so `ji` gets a clean end of file. A timeout that signals the recorder does not:
+the signal travels to the whole pipeline, `ji` dies mid-run, and nothing is printed.
 
 `pw-cat` leaves one sign that it was ended rather than that it failed: a lone `-` on
 stderr, which is its own progress output cut off. Silence it with `2>/dev/null` if it
@@ -81,7 +81,7 @@ stderr for everything else, including a bad command line.
 
 Input format is fixed: 16 kHz, mono, signed 16-bit little-endian PCM, no container.
 Pipes are welcome; so is a WAV-less file. If your source is not that format, `ffmpeg`
-or `pw-cat` converts it in front of `记`.
+or `pw-cat` converts it in front of `ji`.
 
 Two traps in the recorder's spelling. PipeWire calls the sample format `s16`, `ffmpeg`
 calls the same bytes `s16le`, and `pw-cat` reports `unknown format` if you mix them up.
@@ -124,7 +124,7 @@ hand speech to ByteDance, run `ji --provider audiocpp` against a server you cont
 
 Hotkeys, tray icons, clipboard, typing into other windows, an input-method front end,
 daemon mode, LLM cleanup of transcripts, and translation. Each is a separate tool that
-can pipe with `记`; none of them make this one smaller.
+can pipe with `ji`; none of them make this one smaller.
 
 ## Privacy and terms
 

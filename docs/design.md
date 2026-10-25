@@ -2,7 +2,7 @@
 
 ## The one decision that shapes everything
 
-`记` reads a byte stream, calls one provider, prints one string. Nothing else.
+`ji` (记) reads a byte stream, calls one provider, prints one string. Nothing else.
 
 ```
 stdin (16k mono s16le PCM)
@@ -51,10 +51,10 @@ resampling code exists. Anything else is converted by `ffmpeg` or `pw-cat` upstr
 which are better at that job than a Rust binary this size will ever be. The two spell
 that format name differently: PipeWire says `s16`, `ffmpeg` says `s16le`.
 
-**End of file is the end of the dictation.** A pipe that stays open keeps `记` waiting,
+**End of file is the end of the dictation.** A pipe that stays open keeps `ji` waiting,
 so the recorder has to be bounded: `ffmpeg -t N`, `timeout N`, `pw-cat --sample-count N`,
-or `Ctrl-C`. Because the signal that ends a recording usually reaches `记` as well — in
-fish, `timeout N recorder | 记` signals the whole pipeline — `记` catches `SIGINT` and
+or `Ctrl-C`. Because the signal that ends a recording usually reaches `ji` as well — in
+fish, `timeout N recorder | ji` signals the whole pipeline — `ji` catches `SIGINT` and
 `SIGTERM` and turns them into end of file. Without that, the partial transcript the
 provider had already produced dies with the process, which is what happened before.
 
@@ -109,7 +109,7 @@ request id, 9 frame state) and receives one response shape (4 type, 5 status, 6 
 buy nothing; the varint handling in `pb.rs` is debuggable and dependency free. Unknown
 fields are skipped, so the format can grow without breaking the client.
 
-**Opus in-process.** The gateway accepts 16 kHz Opus packets, so `记` encodes. PCM over
+**Opus in-process.** The gateway accepts 16 kHz Opus packets, so `ji` encodes. PCM over
 the wire would be 8× the bytes and is not what the IME client sends. The `opus` crate
 links libopus through `audiopus_sys`, which is why the dev shell carries `opus`,
 `pkg-config` and `cmake`.
