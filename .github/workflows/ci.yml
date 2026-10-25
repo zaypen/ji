@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: format
+        run: nix develop --command cargo fmt --check
+      - name: lints
+        run: nix develop --command cargo clippy --all-targets -- -D warnings
+      - name: tests
+        run: nix develop --command cargo test
+      - name: build
+        run: nix develop --command cargo build --release
